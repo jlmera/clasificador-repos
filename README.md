@@ -13,9 +13,9 @@ Aplicación nativa Windows para mantener organizada una colección creciente de 
 │ Status: Listo. Selecciona una acción.                     │
 ├───────────────────────────────────────────────────────────┤
 │ [🔍 Escanear] [✅ Aplicar]                                │
-│ [🧹 Limpiar log] [🔄 Solo reindexar] [🔁 Reclasificar]    │
-│ [🔍 Descubrir] [🏷 Categorías] [⚙ API Key]                │
-│ [🆔 Refrescar GitHub IDs] [🇨🇴 Traducir READMEs]          │
+│ [🧹 Limpiar log] [🔄 Solo reindexar] [🔁 Reclasificar]   │
+│ [🔍 Descubrir] [🏷 Categorías] [⚙ API Key]              │
+│ [🆔 Refrescar GitHub IDs] [🇨🇴 Traducir READMEs]           │
 │ [📚 Wiki Obsidian] [🌐 Abrir buscador]                    │
 ├───────────────────────────────────────────────────────────┤
 │ === Acción: scan ===                                      │
@@ -172,5 +172,5 @@ Este proyecto se distribuye bajo la licencia [MIT](LICENSE) — uso libre inclus
 
 ## Autor
 
-**Jorge L. Mera** (jlmera) — DUGOTEX
+**Jorge L. Mera** (jlmera)
 Asistencia AI: Claude (Anthropic)

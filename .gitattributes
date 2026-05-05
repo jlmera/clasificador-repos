@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────
+# .gitattributes — política de line endings y diff
+# ─────────────────────────────────────────────────────────────────
+#
+# `text=auto` deja que git detecte automáticamente si un archivo
+# es texto. Cuando lo es, se NORMALIZA a LF en el repo y se hace
+# checkout con line-endings nativos del OS (CRLF en Windows).
+#
+# Esto silencia los warnings "LF will be replaced by CRLF" y
+# garantiza que el repo en GitHub tenga LF consistente sin importar
+# desde qué OS se commitee.
+
+* text=auto
+
+# Archivos de texto explícitos — siempre LF en el repo
+*.rs       text eol=lf
+*.toml     text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf
+*.json     text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+
+# Archivos shell — LF
+*.sh       text eol=lf
+
+# Archivos batch de Windows — DEBEN tener CRLF (cmd.exe los rechaza con LF)
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Binarios — git no debe tocarlos ni mostrar diff por bytes
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.pdf      binary
+*.exe      binary
+*.dll      binary
+*.zip      binary
+*.lock     binary
