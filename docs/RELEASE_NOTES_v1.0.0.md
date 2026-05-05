@@ -78,5 +78,5 @@ Ambos se configuran desde el botón **⚙ API Key** en la app y se almacenan cif
 
 ---
 
-**Autor:** Jorge L. Mera ([@jlmera](https://github.com/jlmera)) — DUGOTEX
+**Autor:** Jorge L. Mera ([@jlmera](https://github.com/jlmera))
 **Asistencia AI:** Claude (Anthropic)
