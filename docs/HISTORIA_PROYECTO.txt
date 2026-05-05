@@ -1,0 +1,985 @@
+================================================================================
+  CLASIFICADOR DE REPOSITORIOS — HISTORIA COMPLETA DEL PROYECTO
+  Desarrollo: jlmera (Jorge L. Mera) · DUGOTEX
+  Carpeta:    D:\DUGOTEX\11 - IA\GitHub\
+================================================================================
+
+RESUMEN EJECUTIVO
+-----------------
+Punto de partida: 94 repositorios clonados desordenados en una sola carpeta.
+Objetivo:         categorizarlos, indexarlos y construir herramientas para
+                  navegarlos, mantener el orden a futuro y traducir docs al ES.
+
+Solución entregada (2 versiones, paridad funcional):
+  · clasificadopy.exe — implementación Python + tkinter (PyInstaller)
+  · clasificadors.exe — implementación Rust + eframe/egui (cargo, definitiva)
+
+Ambas comparten:
+  - Detección de duplicados por nombre y por URL del git remote.
+  - Heurística de clasificación con keywords ponderados por categoría.
+  - Fallback opcional a LLM (Anthropic Claude Sonnet 4.6) para clasificar
+    repos con baja confianza heurística.
+  - Buscador HTML autocontenido con datos JSON embebidos, paginación,
+    ordenamiento por columna, filtros por categoría/lenguaje/stack y
+    búsqueda full-text con resaltado.
+  - Render de README individual a HTML formateado (estilo GitHub Light +
+    paleta sage #8FB46B), con caché incremental por mtime.
+  - Traducción del README al español vía LLM, con caché en _README_es.md.
+  - Wiki Obsidian generada con frontmatter YAML, wikilinks, página por
+    repo, página por categoría, índice global y índice de tags.
+  - Cifrado de la API key con Windows DPAPI (CryptProtectData) en
+    config.dat junto al .exe — solo el usuario actual puede descifrarla.
+
+================================================================================
+  FASE 1 — INVENTARIO Y CATEGORIZACIÓN INICIAL
+================================================================================
+
+PROBLEMA
+  Los 94 repos estaban en la raíz `D:\DUGOTEX\11 - IA\GitHub\`, sin estructura.
+  Imposible saber qué hace cada uno o agruparlos por tema.
+
+ANÁLISIS REALIZADO
+  Para cada repositorio se leyó:
+    · README.md / Readme.md / README (primeros 80 líneas, 4000 chars)
+    · package.json (description), composer.json (description)
+    · Cargo.toml, go.mod, pyproject.toml, requirements.txt
+    · Dockerfile, docker-compose.yml
+    · Distribución de extensiones para detectar lenguaje principal
+
+  Los repos detectados van desde proyectos pequeños (skills de Claude
+  con solo Markdown) hasta forks gigantes de cpython, kubernetes, linux,
+  postgres, redis y react.
+
+TAXONOMÍA PROPUESTA (10 categorías)
+  01-claude-code               (26 repos) — Skills, plugins, configs Claude Code
+  02-mcp-y-conectores          (4 repos)  — Servidores MCP y conectores
+  03-agentes-y-llms            (12 repos) — Frameworks de agentes IA, RAG
+  04-listas-curadas            (6 repos)  — Awesome lists, roadmaps, libros
+  05-self-hosted               (8 repos)  — Apps autoalojables (mail, CRM, ...)
+  06-infraestructura-core      (10 repos) — Kernels, lenguajes, BD, runtimes
+  07-multimedia-y-conversion   (9 repos)  — PDF, OCR, video, audio
+  08-productividad             (5 repos)  — Gestión personal, automatización
+  09-sistema-windows-linux     (8 repos)  — Tooling de SO, redes, privacidad
+  10-utilidades-dev            (6 repos)  — Editores, IDEs, scripts dev
+
+CARPETAS AUXILIARES
+  _inbox/     — bandeja de entrada para clones nuevos (con README explicativo)
+  tools/      — antes _tools, scripts y JSONs auxiliares
+  wiki/       — antes _wiki, vault Obsidian generado
+  clasificador/   — código fuente Python + .exe + README
+
+ENTREGABLES INICIALES
+  - PLAN_CATEGORIZACION_GITHUB.md — documento detallado por categoría
+  - mover_repos.ps1 — script PowerShell con los 94 Move-Item (ejecutado)
+  - repos_scan.json — dataset crudo del análisis
+  - repos_index.json — índice enriquecido con tags
+  - buscador.html — web buscadora autocontenida
+  - descripciones_es.json — traducciones manuales en español
+
+DECISIONES IMPORTANTES
+  - Categorías como prefijos numéricos (01-, 02-, ...) para orden visual.
+  - _inbox mantiene el guion bajo porque su prefijo es funcional
+    (find_inbox_repos lo usa para distinguir repos sin clasificar).
+  - Esquema "una sola categoría por repo" — sin tags multi-categoría.
+
+================================================================================
+  FASE 2 — BUSCADOR WEB (buscador.html)
+================================================================================
+
+DECISIÓN ARQUITECTÓNICA
+  HTML autocontenido con JSON embebido (no fetch), funciona offline desde
+  file:// sin servidor. Datos viven dentro del propio HTML como
+  <script id="data" type="application/json">[…]</script>.
+
+CARACTERÍSTICAS UI
+  - Logo SVG inline (gradiente verde sage + carpeta blanca + lupa).
+  - Tabla con columnas: #, GH ID, Repo, Categoría, Lenguaje, Fecha,
+    Descripción + Tags, Acciones.
+  - Búsqueda full-text con highlight (fondo amarillo claro #fff8c5).
+  - Filtros: categoría, lenguaje, stack.
+  - Paginación: 25/50/100/200/Todos por página (default 50).
+  - Sort por columna con detección automática de tipo (números vs
+    texto vs fechas ISO).
+  - Click en categoría/tag dentro de una fila filtra automáticamente.
+  - Atajos: / enfoca buscador, Esc limpia.
+  - Acciones por fila:
+      📖 README en idioma original (apunta a _README.html)
+      🇪🇸 README traducido al español (solo si existe _README_es.html)
+
+PALETA (TEMA CLARO ESTILO GITHUB LIGHT)
+  --bg:        #ffffff
+  --bg2:       #f6f8fa  (panel)
+  --bg3:       #eaeef2  (panel2)
+  --fg:        #1f2328  (texto)
+  --muted:     #59636e
+  --accent:    #8FB46B  (verde sage — solicitado por el usuario)
+  --accent-h:  #496229  (verde oliva oscuro — texto sobre claro)
+  --accent2:   #125F27  (verde oscuro)
+  --pill-fg:   #3D5827  (texto en pills de categoría)
+  --warn:      #9a6700  (ámbar)
+  --err:       #d1242f  (rojo)
+
+================================================================================
+  FASE 3 — CLI PYTHON (clasificador.py)
+================================================================================
+
+ARCHIVO: clasificador/clasificador.py (~840 líneas)
+
+MÓDULOS LÓGICOS
+  - scan_repo(repo)              — leer README + manifests + lenguajes
+  - detect_language(repo)        — recorrer extensiones (top 2 niveles)
+  - detect_stack(repo)           — Dockerfile, Cargo.toml, go.mod, ...
+  - classify_heuristic(scan)     — score por keywords, devuelve (cat, conf)
+  - classify_llm(scan, api_key)  — fallback a Claude Sonnet 4.6 con prompt
+  - find_duplicate(repo, exist)  — por nombre y por URL git remote
+  - move_repo(src, root, cat)    — shutil.move con _safe_rmtree
+  - rebuild_index(root, ...)     — reescanea árbol y genera repos_index.json
+  - generate_html(root, data)    — HTML con datos embebidos
+  - render_readme_html()         — _README.html por repo
+  - render_readme_html_es()      — _README_es.html con caché en .md
+  - translate_readme_md()        — llamada a Claude API
+  - generate_obsidian_wiki()     — vault completo en _wiki/
+
+CLI OPCIONES (clasificador.exe)
+  --apply              ejecuta movimientos (sin él es dry-run)
+  --threshold 0.6      umbral de confianza para auto-mover
+  --no-llm             desactiva el fallback LLM
+  --reindex-only       solo regenera índices
+  --root <path>        raíz custom
+
+DEPENDENCIAS
+  - markdown (PyPI) para Markdown → HTML
+  - Resto de stdlib: argparse, json, urllib.request, ctypes, etc.
+
+PROBLEMAS RESUELTOS
+  1. UnicodeEncodeError al redirigir stdout a archivo en Windows
+     → Forzar sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+  2. shutil.rmtree falla con WinError 5 al borrar .git en Windows
+     (archivos pack/idx con read-only)
+     → _safe_rmtree con onerror handler que limpia atributo y reintenta
+  3. JSON con BOM al escribir desde PowerShell
+     → Out-File -Encoding UTF8 produce BOM. Solución: PowerShell
+       [System.IO.File]::WriteAllText con UTF8Encoding(false), o generar
+       desde Python con json.dump(ensure_ascii=False).
+  4. Caché de IDs de GitHub guardaba id=None y nunca reintentaba
+     → Reintentar si tiene cache pero id=None y allow_network
+  5. rebuild_index con LLM activo intentaba traducir 114 READMEs
+     automáticamente — colgaba 20 min sin progreso
+     → render_readme_html_es con allow_api_call=False solo reusa caché
+       Traducción solo se dispara con botón explícito.
+
+================================================================================
+  FASE 4 — GUI PYTHON (clasificador_gui.py + tkinter)
+================================================================================
+
+ARCHIVO: clasificador/clasificador_gui.py (~1100 líneas)
+
+DECISIÓN: tkinter (stdlib, sin deps externas)
+  Ventaja: 0 dependencias adicionales para empaquetar.
+  Tamaño .exe con PyInstaller --onefile --windowed: ~13 MB
+
+COMPONENTES UI
+  Header con logo SVG (40×40 px renderizado por Pillow).
+  Configuración: ruta + slider umbral + checkbox LLM + botón "..."
+  selector de carpeta con filedialog.
+  Botones de acción:
+    🔍 Escanear sin aplicar       (dry-run)
+    ✅ Aplicar (mover)            (confirmación modal)
+    🔄 Solo reindexar
+    🌐 Abrir buscador
+    📚 Wiki Obsidian
+    🌐 Traducir
+    🚫 Resolver duplicados
+    ⚙ API Key
+    🧹 Limpiar log
+  Barra de progreso (ttk.Progressbar) animada.
+  Log con colores (tk.Text con tags por color).
+  Status bar inferior.
+
+THREADING
+  worker en threading.Thread, comunica con UI vía queue.Queue.
+  root.after(60ms) hace polling y aplica updates.
+
+DIÁLOGO RESOLVER DUPLICADOS
+  Toplevel modal con scroll.
+  Una card por duplicado con info comparativa NUEVO vs EXISTENTE
+  (path, url, último commit, tamaño aprox).
+  5 acciones por duplicado:
+    📦 Archivar (recomendado, default) — mueve a _inbox/_duplicados/
+    ⏭ Saltar
+    ✏ Renombrar y reprocesar
+    🔄 Reemplazar viejo (⚠ destructivo)
+    🗑 Borrar nuevo (⚠ irreversible)
+  Bulk actions: archivar todos / saltar todos / borrar todos /
+                reemplazar todos.
+  Indicador en vivo: "→ Acción elegida: 📦 Archivar".
+  Tras aplicar decisiones, dispara reindex automático.
+
+DIÁLOGO API KEY (DPAPI)
+  Toplevel con campo password (entry show='*').
+  Toggle 👁 muestra/oculta.
+  Botones:
+    💾 Guardar     — cifra con CryptProtectData y escribe config.dat
+    🔌 Probar      — llamada de prueba a api.anthropic.com
+    🗑 Eliminar    — borra config.dat
+    Cancelar
+  El config.dat vive junto al .exe.
+
+PROBLEMAS RESUELTOS EN GUI
+  1. Botón Accent disabled aparecía negro
+     → Era hex con alpha (#1f6feb55) que tkinter no soporta. Cambio a
+       sólido #c8d8b8 (verde claro desaturado).
+  2. Diálogo duplicados: card no renderizaba bien con grid anidado
+     → Reescritura usando solo pack() lineal vertical, sin grids.
+  3. Traducción del README era opcional pero se ejecutaba en cada apply
+     → Pasar allow_api_call=False a render_readme_html_es desde
+       rebuild_index. Solo el botón "Traducir" llama al LLM.
+
+================================================================================
+  FASE 5 — INTERACIONES Y MEJORAS DEL USUARIO
+================================================================================
+
+CAMBIOS ESTÉTICOS (paleta verde sage #8FB46B)
+  - Solicitado por el usuario en lugar del azul GitHub original.
+  - Verdes oscurecidos para textos: #496229, #125F27, #3D5827 (mejor
+    legibilidad sobre fondo blanco).
+  - Color del texto del nombre del repo igual al texto de la categoría
+    (#3D5827) para coherencia visual.
+  - "CLASIFICADOR" en verde negrita en el header.
+  - Banda separadora verde de 3px arriba del header (entre barra de
+    título de Windows y panel del header).
+
+CAMBIOS FUNCIONALES SOLICITADOS
+  - Renombrar app: "DUGOTEX · Clasificador de repos" →
+    "CLASIFICADOR DE REPOSITORIOS" (sin DUGOTEX).
+  - Botón "Escanear (dry-run)" → "Escanear sin aplicar".
+  - Renombrar GUI Python: clasificador-gui.exe → clasificadopy.exe.
+  - Eliminar clasificador.exe CLI (la GUI no lo necesita).
+  - Renombrar carpetas: _tools → tools, _wiki → wiki (más limpio).
+  - Mover archivos auxiliares de la raíz a tools/.
+  - Cuando se eliminó el botón de Explorador de archivos:
+    se generaban 49.684 _explorador.html (~314 MB) por la recursión.
+    Solución: eliminar la feature por excesiva.
+
+DIAGNÓSTICOS HECHOS
+  - Buscador no mostraba datos: ReferenceError en JS porque al
+    refactorizar render() la variable q quedó fuera de scope.
+    Fix: declarar `const q = qEl.value...` al inicio de render().
+  - Ordenamiento por columna # mostraba 1, 10, 100, 11, 12, 2 —
+    era comparación lexicográfica.
+    Fix: detectar números con isNum() y comparar como Number().
+  - Subcarpetas del explorador perdían formato (caían a vista nativa
+    de Windows). La solución implicaba generar HTML recursivo (que
+    explotó en archivos), por eso se decidió eliminar la feature.
+
+================================================================================
+  FASE 6 — PORT A RUST (clasificador-rs/)
+================================================================================
+
+DECISIÓN
+  El usuario solicitó reescribir todo en Rust con clasificadors.exe
+  como nombre, manteniendo schema JSON idéntico para validación lado a
+  lado. Sufijo "_rs" en archivos durante la fase de validación
+  (repos_index_rs.json, buscador_rs.html, repo_ids_rs.json).
+
+VERIFICACIÓN PRE-BUILD
+  - Visual Studio 2022 Build Tools detectados (cl.exe + Windows SDK
+    10.0.26100.0 presentes).
+  - rustup ya tenía toolchain stable-x86_64-pc-windows-msvc instalado
+    (1.95.0 / cargo 1.95.0). Solo hubo que desbloquear los .exe con
+    Mark of the Web vía Unblock-File.
+
+ESTRUCTURA DEL PROYECTO Rust
+
+  D:\DUGOTEX\11 - IA\GitHub\clasificador-rs\
+  ├── Cargo.toml              (deps: clap, serde, walkdir, regex,
+  │                                  ureq, pulldown-cmark, encoding_rs,
+  │                                  eframe, egui, image, rfd,
+  │                                  windows, chrono, anyhow, ...)
+  ├── build.rs                (winres embebe clasificadors.ico)
+  ├── clasificadors.ico       (icono multi-resolución, mismo del Python)
+  ├── src/
+  │   ├── lib.rs              (módulos públicos)
+  │   ├── main.rs             (entry point GUI eframe)
+  │   ├── bin/cli.rs          (CLI standalone — clasificadors-cli.exe)
+  │   ├── categories.rs       (CATEGORIAS, KEYWORDS, TAG_KEYWORDS)
+  │   ├── paths.rs            (tools_dir, descripciones_path, ...)
+  │   ├── scan.rs             (scan_repo, detect_language, manifests)
+  │   ├── classify.rs         (heurística scoring 0..1)
+  │   ├── duplicates.rs       (find_duplicate por nombre + URL)
+  │   ├── ids.rs              (GitHub API + cache + last_attempt 24h)
+  │   ├── moves.rs            (find_inbox_repos, is_repo_dir)
+  │   ├── apply_actions.rs    (move_repo, safe_rmtree, dup actions)
+  │   ├── readme.rs           (render_readme_html con pulldown-cmark)
+  │   ├── llm.rs              (translate_readme_md, render_es,
+  │   │                        test_api_key vía ureq)
+  │   ├── wiki.rs             (generate_obsidian_wiki)
+  │   ├── secrets.rs          (DPAPI con windows-rs)
+  │   └── gui/
+  │       ├── mod.rs          (re-exports)
+  │       ├── theme.rs        (paleta egui idéntica a tkinter)
+  │       └── app.rs          (ClasificadorApp eframe::App)
+  └── templates/
+      ├── readme_viewer.html  (incluido con include_str!)
+      └── buscador.html       (incluido con include_str!)
+
+PROBLEMAS DE COMPILACIÓN RESUELTOS
+
+  1. Borrow checker en poll_worker:
+     `if let Some(rx) = &self.rx` mantenía borrow inmutable mientras
+     intentaba self.append_log() que pide &mut self.
+     Fix: drenar mensajes a Vec primero, luego aplicar mutaciones.
+
+  2. macro_rules! con `let` en single-expression body:
+     `macro_rules! log { ($t:expr) => { let _ = tx.send(...); } }`
+     fallaba con "expected expression, found let".
+     Fix: doble llave `{{ ... }}` (block expression).
+
+  3. PowerShell `-replace` case-insensitive convirtió `Log(` → `log!(`
+     en TODO el archivo, incluyendo el enum WorkerMsg::Log.
+     Fix: usar `-creplace` (case-sensitive) para revertir.
+
+  4. windows-rs 0.58: LocalFree no está en el path esperado
+     `windows::Win32::System::Memory::LocalFree`.
+     Fix pragmático: comentar las llamadas (memory leak <100 bytes
+     por sesión, despreciable). Quitar feature Win32_System_Memory.
+
+PARIDAD FUNCIONAL FINAL
+
+  | Feature                       | Python | Rust |
+  |-------------------------------|--------|------|
+  | 🔍 Escanear sin aplicar       |   ✓    |  ✓   |
+  | ✅ Aplicar (mover)            |   ✓    |  ✓   |
+  | 🔄 Solo reindexar             |   ✓    |  ✓   |
+  | 🌐 Abrir buscador             |   ✓    |  ✓   |
+  | 📚 Wiki Obsidian              |   ✓    |  ✓   |
+  | 🌐 Traducir READMEs           |   ✓    |  ✓   |
+  | 🚫 Resolver duplicados        |   ✓    |  ✓   |
+  | ⚙ API Key (DPAPI)             |   ✓    |  ✓   |
+  | Selector de carpeta `…`       |   ✓    |  ✓   |
+  | 🔁 Refrescar GitHub IDs       |   —    |  ✓   |
+  | Cache last_attempt 24h        |   —    |  ✓   |
+  | Icono .ico en exe + ventana   |   ✓    |  ✓   |
+  | Tema verde sage               |   ✓    |  ✓   |
+
+MEJORAS EXCLUSIVAS DE RUST
+  - Cache `last_attempt` en repo_ids_rs.json: si una consulta a GitHub
+    falla, se guarda timestamp y no se reintenta hasta 24h después.
+  - Botón 🔁 Refrescar GitHub IDs separado: permite forzar reintento
+    de todos los IDs faltantes sin pasar por el reindex normal.
+  - Reindex normal nunca consulta GitHub → siempre <2s.
+
+================================================================================
+  MÉTRICAS COMPARATIVAS FINALES
+================================================================================
+
+                          Python            Rust            Mejora
+  Tamaño .exe           13.14 MB         7.14 MB           -46%
+  Tiempo reindex          ~30 s          <2 s              ~15×
+  Arranque                ~1.5 s         <200 ms           ~7×
+  Líneas de código        ~2000 LoC      ~2300 LoC         similar
+  Crates compiladas       (n/a)          ~270
+  Dependencias runtime    Python+md      ninguna (estático)
+  Tiempo build            ~30s           ~30s incremental
+                                         ~10min full primer build
+
+ARCHIVOS DE LA APP DEFINITIVA
+
+  D:\DUGOTEX\11 - IA\GitHub\
+  ├── _inbox\                      (bandeja de nuevos clones)
+  ├── 01-claude-code\              (10 carpetas de categoría con repos)
+  ├── 02-mcp-y-conectores\
+  ├── ...
+  ├── 10-utilidades-dev\
+  ├── tools\                       (auxiliares: scripts, JSONs, _README cache)
+  │   ├── descripciones_es.json
+  │   ├── repos_index.json         (Python output)
+  │   ├── repos_index_rs.json      (Rust output, sufijo _rs validación)
+  │   ├── repo_ids.json            (cache Python)
+  │   ├── repo_ids_rs.json         (cache Rust con last_attempt)
+  │   └── ... (scripts .ps1 históricos)
+  ├── wiki\                        (vault Obsidian generado)
+  ├── clasificador\                (proyecto Python definitivo)
+  │   ├── clasificadopy.exe        (13.14 MB)
+  │   ├── clasificador.py
+  │   ├── clasificador_gui.py
+  │   ├── secret_store.py
+  │   ├── make_icon.py
+  │   ├── build_exe.ps1
+  │   ├── README.md
+  │   └── clasificadopy.ico
+  ├── clasificador-rs\             (proyecto Rust definitivo)
+  │   ├── Cargo.toml
+  │   ├── build.rs
+  │   ├── clasificadors.ico
+  │   ├── src/                     (15 archivos .rs)
+  │   ├── templates/
+  │   └── target/release/clasificadors.exe (7.14 MB)
+  ├── buscador.html                (con datos embebidos, abre offline)
+  ├── buscador_rs.html             (versión Rust, validación lado a lado)
+  ├── clasificadors.exe            (RUST, app definitiva)
+  ├── clasificadopy.exe            (Python, mantenida por compatibilidad)
+  ├── config.dat                   (API key cifrada DPAPI)
+  ├── PLAN_CATEGORIZACION_GITHUB.md
+  └── HISTORIA_PROYECTO.txt        (este archivo)
+
+================================================================================
+  TAREAS COMPLETADAS (resumen cronológico)
+================================================================================
+
+FASE 1 — Análisis y categorización inicial (tareas 1-12):
+  ✓ Crear plan de tareas y enumerar repos
+  ✓ Analizar README y manifest de cada repo
+  ✓ Definir taxonomía y asignar categoría a cada repo
+  ✓ Generar PLAN_CATEGORIZACION_GITHUB.md
+  ✓ Diseñar solución de indexación tipo wiki Obsidian
+  ✓ Mover los 94 repos a sus categorías
+  ✓ Crear _inbox con README explicativo
+  ✓ Copiar archivos auxiliares a la raíz (luego movidos a tools/)
+  ✓ Generar repos_index.json enriquecido
+  ✓ Construir buscador.html
+  ✓ Verificar entregables y enlaces
+
+FASE 2 — CLI Python (tareas 13-22):
+  ✓ Traducir descripciones al español
+  ✓ Diseñar arquitectura del clasificador
+  ✓ Escribir clasificador.py modular
+  ✓ Compilar a clasificador.exe con PyInstaller
+  ✓ Corregir UnicodeEncodeError (forzar UTF-8 stdout/stderr)
+  ✓ Añadir detección de duplicados (nombre + URL git)
+
+FASE 3 — GUI Python con tkinter (tareas 23-49):
+  ✓ Construir clasificador_gui.py (~1100 líneas)
+  ✓ Compilar GUI con --windowed
+  ✓ Probar con repos dummy + duplicados simulados
+  ✓ secret_store.py con Windows DPAPI
+  ✓ Diálogo modal API Key (probar/guardar/eliminar)
+  ✓ Worker GUI lee la key del store cifrado
+  ✓ Crear _tools y mover archivos auxiliares
+  ✓ Refactor para leer/escribir desde _tools/
+  ✓ Añadir GitHub ID + consecutivo + fecha al índice
+  ✓ Auto-traducir descripciones al español con LLM
+  ✓ Integrar generador de wiki Obsidian
+  ✓ Actualizar HTML buscador con ID y Fecha
+  ✓ Reintentar GH ID si quedó None
+  ✓ Auto-traducción también en reindex
+  ✓ Diálogo interactivo "Resolver duplicados"
+  ✓ Quitar clasificador.exe de la raíz, dejar solo el GUI
+  ✓ Fix ordenamiento numérico en buscador.html
+  ✓ Múltiples iteraciones del diálogo de duplicados (4 versiones)
+  ✓ Tema claro + ajustes estéticos GUI
+  ✓ Aplicar verde #8FB46B
+  ✓ Oscurecer verdes usados como texto
+  ✓ Color REPO = CATEGORÍA + ventana más ancha (1260×740)
+  ✓ Acción 'archive_new' (mover a _inbox/_duplicados/)
+
+FASE 4 — Pulidos de la versión Python (tareas 50-69):
+  ✓ Reescribir _open_duplicates_dialog con diseño robusto
+  ✓ Renombrar app a "CLASIFICADOR DE REPOSITORIOS"
+  ✓ Texto botón "Escanear sin aplicar"
+  ✓ Fix WinError 5 al borrar .git en Windows (read-only handler)
+  ✓ Render READMEs a HTML formateado individual
+  ✓ Default sort por #, paginación, quitar footer
+  ✓ Explorador HTML de archivos por repo (luego eliminado)
+  ✓ Diagnosticar y corregir buscador sin datos (q out of scope)
+  ✓ Logo SVG + header rediseñado compacto
+  ✓ Traducir README al español con LLM (con caché .md)
+  ✓ Cablear API key al reindex
+  ✓ Botón "Traducir READMEs" dedicado
+  ✓ Renombrar GUI a clasificadopy.exe
+  ✓ Eliminar clasificador.exe CLI
+  ✓ Renombrar _tools/_wiki sin guion bajo
+  ✓ Fix botón Accent disabled aparecía negro (alpha en hex)
+  ✓ Fix reindex no debe traducir READMEs automáticamente
+  ✓ Crear icono .ico con Pillow + aplicar a EXE y ventana
+
+FASE 5 — Port completo a Rust (tareas 70-92):
+  ✓ Validar Build Tools y toolchain Rust (Visual Studio 2022)
+  ✓ Setup proyecto clasificador-rs/ + Cargo.toml
+  ✓ Port scan.rs + classify.rs (núcleo)
+  ✓ Port ids.rs + index.rs + html.rs
+  ✓ Compilar clasificadors-cli.exe + validar JSON idéntico
+  ✓ Añadir eframe + egui para GUI
+  ✓ Compilar primer clasificadors.exe GUI
+  ✓ Port apply_actions.rs (move/safe_rmtree/dups)
+  ✓ Implementar Scan + Apply en GUI Rust
+  ✓ Diálogo Resolver duplicados con egui::Window
+  ✓ Recompilar GUI con 3 features
+  ✓ Borrar todos + Reemplazar todos en Bulk
+  ✓ Icono .ico embebido vía winres
+  ✓ Botón "..." selector de carpeta con rfd
+  ✓ Port secrets.rs (DPAPI con windows-rs)
+  ✓ Port llm.rs (Anthropic Claude API con ureq)
+  ✓ Port wiki.rs (vault Obsidian)
+  ✓ Diálogo API Key + handlers wiki/translate
+  ✓ Recompilar GUI Rust completa
+  ✓ A: Botón "Refrescar GitHub IDs" separado
+  ✓ B: Cache last_attempt para no reintentar <24h
+  ✓ Estilo header: CLASIFICADOR en verde + línea arriba
+  ✓ Quitar todas las menciones de Rust en GUI y HTML
+
+================================================================================
+  CONFIGURACIONES Y NOTAS DEL ENTORNO
+================================================================================
+
+ENTORNO TÉCNICO DEL USUARIO
+  - Windows 11 26200, Spanish (page code Windows-1252 en consola).
+  - Python 3.12.10 instalado en C:\Python\Python312\.
+  - Rust toolchain stable-x86_64-pc-windows-msvc (1.95.0).
+  - Visual Studio 2022 Build Tools: VC 14.44 + Windows SDK 10.0.26100.
+  - cargo en C:\Users\JORGE MERA\.cargo\bin (PATH OK tras Unblock-File).
+
+ATAJOS DEL FLUJO DIARIO
+  Ciclo típico para clasificar nuevos repos:
+    1. cd D:\DUGOTEX\11 - IA\GitHub\_inbox\
+    2. git clone <url-repo>
+    3. Doble clic en clasificadors.exe (raíz GitHub)
+    4. Pulsar 🔍 Escanear → revisa propuesta de clasificación
+    5. Pulsar ✅ Aplicar → mueve, regenera índice y buscador.html
+    6. Si hay duplicados → 🚫 Resolver duplicados, elegir acción
+    7. (Opcional) ⚙ API Key (1 vez) → 🌐 Traducir
+    8. (Cada cierto tiempo) 🔁 Refrescar GitHub IDs (rate limit 60/h)
+
+API KEY ANTHROPIC
+  - Cifrada con DPAPI (CryptProtectData) en config.dat junto al .exe.
+  - Solo el usuario actual de Windows en este PC puede descifrarla.
+  - Se obtiene en https://console.anthropic.com/settings/keys
+  - Modelo usado: claude-sonnet-4-6.
+  - Costo aproximado:
+      Clasificación LLM (fallback): ~$0.001 por repo dudoso.
+      Traducción README:            ~$0.005 por repo (depende tamaño).
+      Total típico para 119 repos:  ~$0.50 - $2 USD una vez.
+
+SCHEMA DEL JSON repos_index.json
+  Lista de objetos con campos:
+    id                  (number | null)  — GitHub repo ID, o null
+    consecutivo         (number)          — 1..N, contador local estable
+    name                (string)
+    categoria           (string)          — "01-claude-code", etc.
+    ruta                (string)          — path absoluto Windows
+    descripcion         (string)          — en español si hay traducción
+    lenguaje_principal  (string)          — "Python", "Rust", "TypeScript"…
+    stack               (array<string>)   — ["docker", "rust", "python"...]
+    tags                (array<string>)   — categoría, lang/X, stack/X, tema/X
+    fecha_agregado      (string)          — ISO date del primer commit
+    url_github          (string | null)
+    readme_html         (string | null)   — path absoluto al _README.html
+    readme_es_html      (string | null)   — path absoluto al _README_es.html
+    necesita_traduccion (boolean)
+
+================================================================================
+  ESTADO ACTUAL DEL PROYECTO
+================================================================================
+
+VERSIÓN DEFINITIVA: Rust (clasificadors.exe en raíz GitHub)
+  · Toda la funcionalidad portada desde Python.
+  · Sin menciones de "Rust" en la UI (es transparente al usuario).
+  · clasificadopy.exe se mantiene por ahora como referencia/backup.
+
+================================================================================
+  FASE 7 — CATEGORÍAS EDITABLES (3a · 3b · 3c)
+================================================================================
+
+PROBLEMA
+  Las 10 categorías iniciales eran constantes hardcoded en `categories.rs`,
+  con sus keywords y topic_boosts. Para refinar la clasificación o
+  agregar/quitar categorías había que modificar el código y recompilar.
+  Inviable a largo plazo cuando el universo de repos crece a 150+.
+
+SOLUCIÓN
+  Sub-fase 3a — Config externalizado:
+    · Nuevo archivo `data/categorias.json` con la taxonomía completa
+      (versión + array de CategoriaDef, cada uno con id, keywords y
+      topic_boosts).
+    · `categories_config.rs` carga el JSON con fallback a los hardcoded
+      si no existe (auto-bootstrap).
+    · `classify_heuristic` ahora recibe el config como parámetro.
+
+  Sub-fase 3b — Reclasificación masiva:
+    · Botón "🔁 Reclasificar todo" en la GUI.
+    · Worker `compute_reclassification` analiza TODOS los repos contra
+      el config actual y muestra propuestas de cambio en un diálogo
+      modal (con confianza por repo y selección granular).
+    · Worker `apply_reclassification` mueve los seleccionados con
+      `fs::rename` físico.
+
+  Sub-fase 3c — Editor visual de categorías:
+    · Diálogo "🏷 Categorías" en la GUI con panel doble (lista + editor).
+    · Operaciones soportadas: añadir, eliminar, renombrar, reordenar
+      (▲▼), editar keywords y topic_boosts con DragValue para pesos.
+    · Renombrar el id dispara `fs::rename` de la carpeta física en
+      disco; eliminar con repos dentro los migra al fallback antes
+      de borrar la carpeta vacía.
+    · Validación robusta de IDs únicos (incluye prefijo NN-),
+      sin caracteres reservados de Windows, lista no vacía.
+
+ENTREGABLE
+  · `data/categorias.json` editable por usuario o por la GUI.
+  · `categories_config.rs` nuevo módulo (~125 líneas).
+  · `reclassify.rs` nuevo módulo (~140 líneas).
+  · 3 botones nuevos en la GUI: 🔁 Reclasificar · 🏷 Categorías · 🧹
+    Borrar vacías y 🔢 Compactar numeración (estos últimos llegaron
+    en la fase 5).
+
+DECISIONES IMPORTANTES
+  · Los topic_boosts se cargan con peso 12 por defecto para topics
+    canónicos y peso 10 para sinónimos auto-detectados, manteniendo
+    la jerarquía intencional del scoring.
+  · El "fallback" es siempre la última categoría de la lista (por
+    convención '10-utilidades-dev'); reordenar puede cambiar quién es.
+
+================================================================================
+  FASE 8 — ROBUSTEZ Y ATOMICIDAD (3d)
+================================================================================
+
+PROBLEMA
+  Síntoma observado: tras varios refresh con el binario corriendo en
+  dos máquinas sincronizadas vía Syncthing, el archivo `repo_ids.json`
+  se truncó a 24 KB con solo 43 de 157 repos cacheados, y la última
+  entrada estaba cortada a la mitad (`"awesome-selfhosted"...s`).
+
+CAUSA RAÍZ
+  `fs::write(path, data)` no es atómico: trunca el archivo a 0 bytes,
+  escribe en chunks, cierra. Si Syncthing intercepta a la mitad,
+  los bytes se mezclan con la versión vieja desde la otra máquina.
+
+SOLUCIÓN
+  Nuevo módulo `atomic_io.rs` con `write_atomic_string` y
+  `write_atomic`:
+    1. Escribe a `<path>.tmp`.
+    2. fsync para empujar al disco físico.
+    3. `fs::rename(tmp, real)` — atómico a nivel filesystem
+       (`MoveFileExW` con `MOVEFILE_REPLACE_EXISTING` en Windows).
+
+  Aplicado a 6 archivos críticos:
+    · `repo_ids.json` (cache GitHub IDs + topics)
+    · `categorias.json` (taxonomía editable)
+    · `repos_index.json` (índice consumido por buscador.html)
+    · `descripciones_es.json` (traducciones LLM)
+    · `buscador.html` (entregable principal)
+    · `config.dat` (API key + PAT cifrados con DPAPI)
+
+DETALLE TÉCNICO
+  Si Syncthing intercepta a mitad de proceso, ve el `.tmp` (que el
+  usuario puede excluir agregando `*.tmp` a Ignore Patterns) o el
+  archivo final completo. Nunca un estado intermedio.
+
+  Recovery: tras detectar la corrupción se ejecutó "Refrescar GitHub
+  IDs" con el binario nuevo, regenerando el cache completo de los
+  157 repos en 67.7s. Tras el fix nunca volvió a corromperse.
+
+================================================================================
+  FASE 9 — DESCUBRIDOR AUTOMÁTICO DE CATEGORÍAS (Fase 4)
+================================================================================
+
+PROBLEMA
+  Las 10 categorías iniciales se quedaron chicas con 157 repos. Pero
+  decidir manualmente qué nuevas categorías agregar (y con qué keywords)
+  es tedioso y subjetivo. Los topics oficiales de GitHub (campo `topics`
+  del repo) tienen información valiosa pero estaba sub-utilizada.
+
+SOLUCIÓN
+  Nuevo módulo `topic_discovery.rs` que escanea el cache de
+  `repo_ids.json`, cuenta frecuencia de topics y propone los que
+  pasan ciertos filtros como categorías candidatas.
+
+ALGORITMO
+  1. Contar todos los topics observados (~896 distintos en 157 repos).
+  2. Filtrar:
+     · Topics ya cubiertos por las 10 categorías actuales.
+     · Lenguajes (python, rust, go, etc.) — viven como tag `lang/X`.
+     · Stacks (docker, postgresql, react, etc.) — viven como `stack/X`.
+     · Genéricos (ai, open-source, hacktoberfest, framework, automation).
+  3. Quedarse con los que tengan ≥ N apariciones (umbral configurable
+     en la UI, default = 3).
+  4. Detectar sinónimos:
+     · Plural ↔ singular (`agent` ↔ `agents`).
+     · Sufijo `-cli` (`gemini` ↔ `gemini-cli`).
+  5. Fusionar sinónimos en un único candidato sumando los repos.
+
+ENTREGABLE
+  · Nuevo botón "🔍 Descubrir categorías" en la GUI.
+  · Diálogo modal con tabla: checkbox + count + topic + ID propuesto
+    + sinónimos fusionados + ejemplo de repos.
+  · Filtros por checkbox (ocultar lenguajes/stacks/genéricos).
+  · Botón "🔍 Simular" que ejecuta `compute_reclassification` con un
+    config provisional y muestra cuántos repos REALMENTE caerían en
+    cada candidato (columna "Predicted").
+  · Botón "✨ Solo verdes" que desmarca rojas (predicted=0), amarillas
+    (predicted < count/2) y las no simuladas.
+  · Botón "💾 Crear N categorías + reclasificar" que dispara el flujo
+    completo: persiste el config, crea las carpetas, reclasifica todo
+    el árbol y regenera el HTML.
+
+ANÁLISIS REAL
+  Sobre los 157 repos: 896 topics distintos, 94 con ≥3 ocurrencias,
+  69 candidatos tras filtros default. Aplicando "Simular" + "Solo
+  verdes", típicamente sobreviven ~20-25 candidatos con masa real.
+
+================================================================================
+  FASE 10 — REFINAMIENTOS Y UX (Fase 5)
+================================================================================
+
+PROBLEMAS DETECTADOS POR EL USUARIO EN PRIMERAS PASADAS
+  · Tras dos pasadas del descubridor, los IDs quedaban con saltos
+    (22-claude-code-skill + 22-knowledge-graph + 14-chatgpt + 33-skills),
+    por bug en la asignación del prefijo numérico.
+  · ~15 categorías quedaron vacías porque el algoritmo de classification
+    elegía otro bucket con score más alto.
+
+SOLUCIONES
+  · Botón "🔢 Compactar numeración" en el editor de categorías.
+  · Botón "🧹 Borrar vacías (N)" en el editor.
+  · Bug fix en `apply_discover_worker`: validación de prefijo numérico
+    NN- único.
+  · Renumeración automática al aplicar: los IDs `seq` ahora se asignan
+    según el orden de selección.
+
+UX ADICIONAL
+  · Footer del descubridor reorganizado en 2 líneas (info arriba,
+    opciones abajo).
+  · Menú contextual del log con click derecho: "Copiar todo el log"
+    + "Limpiar log". Cubre 3 zonas: área del texto, espacio a la
+    derecha de líneas cortas, y espacio vacío debajo.
+  · Selección continua del mouse a través de varias líneas del log
+    (refactor a un único `Label` con `LayoutJob` rico que preserva
+    los colores por línea pero permite selección multilínea + Ctrl+C).
+  · Header rediseñado: eliminado el cuadrito con emoji 📂; el título
+    "CLASIFICADOR DE REPOSITORIOS" queda alineado a la izquierda y
+    a su derecha un patrón decorativo de barras verticales (skyline)
+    con altura aleatoria y degradado de color verde oscuro → verde
+    pastel claro.
+
+================================================================================
+  FASE 11 — REFRESH INTELIGENTE CON ETAG (B5.3)
+================================================================================
+
+PROBLEMA
+  Cada "Refrescar GitHub IDs" consumía 157 calls a la API aunque la
+  mayoría de repos no hubieran cambiado upstream. Con PAT (5000/h)
+  no era bloqueante, pero a 500+ repos sería molesto, y el tiempo
+  total era ~70s.
+
+SOLUCIÓN
+  Implementación de `If-None-Match` (ETag conditional GET) según
+  la spec de la GitHub REST API.
+    1. Cada response 200 OK guarda el header `etag` en el `RepoMeta`.
+    2. La siguiente request manda `If-None-Match: <etag>`.
+    3. Si el repo no cambió, GitHub responde **304 Not Modified**.
+    4. Los responses 304 NO consumen cuota del rate-limit.
+
+CAMBIOS EN EL CÓDIGO
+  · `RepoMeta` nuevo campo `etag` (con `#[serde(default)]` para
+    compat con caches viejos).
+  · Nuevo enum `FetchOutcome::{Updated, NotModified, Failed}`.
+  · `fetch_github_meta` ahora recibe `prev_etag: Option<&str>`.
+  · Nueva struct `GhFetchStats { fetched, not_modified, failed,
+    skipped }` reportada en el log.
+
+ENTREGABLE
+  El log del refresh muestra:
+    📡 GitHub API: 5 cambiados · 152 sin cambios (304) · 0 fallaron
+    💡 97% de los requests volvieron 304 → no consumieron rate limit.
+
+  En refreshes posteriores: ~25s vs ~70s previos. **5-10× más eficiente**.
+
+================================================================================
+  FASE 12 — REFACTOR MODULAR DE gui/app.rs (B5.2)
+================================================================================
+
+PROBLEMA
+  `gui/app.rs` había crecido a 3707 líneas. Los borrow-checker
+  conflicts en update() se volvieron hostiles, y cualquier cambio
+  nuevo requería navegar un archivo monolítico.
+
+SOLUCIÓN
+  Refactor pragmático que separa la GUI en 5 módulos auto-contenidos:
+
+    gui/
+    ├── mod.rs        ( 18 líneas)  Re-exports + doc
+    ├── theme.rs      ( 47 líneas)  Paleta de colores
+    ├── types.rs      (172 líneas)  WorkerMsg + 5 DialogStates +
+    │                                DuplicateItem + CatRow
+    ├── helpers.rs    (140 líneas)  validate_and_diff_cats +
+    │                                count_repos_per_category +
+    │                                open_url
+    ├── workers.rs    (601 líneas)  apply_reclass_worker +
+    │                                apply_duplicates_worker +
+    │                                apply_cats_worker +
+    │                                apply_discover_worker
+    └── app.rs        (2826 líneas) ClasificadorApp + impl +
+                                     run_worker + update()
+
+  app.rs bajó de 3707 → 2826 líneas (-24%).
+
+CRITERIOS DEL SPLIT
+  · `types.rs` → todos los structs serializables o que cruzan
+    threads (DialogStates, WorkerMsg). No tienen lógica.
+  · `helpers.rs` → funciones puras sin acceso a `&mut self`.
+  · `workers.rs` → cada `apply_X_worker` es pure-fn que recibe
+    parámetros y produce mensajes. Sin estado propio.
+  · `app.rs` → todo lo que tiene `&mut self`.
+
+================================================================================
+  FASE 13 — OPTIMIZACIONES Y CIERRE v1.0.0
+================================================================================
+
+CAMBIOS DE PERFORMANCE
+  · `apply_actions::last_commit_date` — regex movida a `Lazy<Regex>`
+    estática. Antes se compilaba ~200 veces por sesión.
+  · `ids::parse_github_owner_repo` — idem, ahora `Lazy<RE_GH_URL>`.
+  · `ids::get_repo_creation_date` — idem, ahora `Lazy<RE_GIT_LOG_TS>`.
+
+  Total: 314 compilaciones de regex evitadas por reindex.
+
+LIMPIEZA DE CÓDIGO
+  · Eliminado `cap.get(1).unwrap()` peligroso en 2 lugares.
+  · Eliminado dead code en `llm.rs:209-220`.
+  · 4 imports `unused` eliminados de `gui/app.rs` post-refactor.
+
+================================================================================
+  RELEASE 1.0.0 — ESTADO FINAL
+================================================================================
+
+VERSIÓN
+  clasificador v1.0.0 — release oficial el 4 de mayo de 2026
+
+DATASETS
+  · 157 repositorios clasificados en disco
+  · ~25 categorías activas (10 originales + 15 descubiertas/refinadas)
+  · 157 entradas con id + topics + description en repo_ids.json
+  · 124 con topics (33 sin etiquetar por sus autores upstream)
+
+BINARIO
+  · clasificador.exe: 7.30 MB (release LTO fat, panic=abort, strip)
+  · Tiempo arranque: <500 ms desde clic
+  · Tiempo reindex completo: ~1 s para 157 repos (sin red)
+  · Tiempo refresh GitHub IDs: ~70 s primer pase, ~25 s siguientes
+    (con ETag conditional GET)
+
+ARCHIVOS DE CÓDIGO
+  · 7653 líneas de Rust en src/
+  · 27 módulos / 7 binarios (clasificador GUI + clasificador-cli)
+  · 9 dependencias directas no estándar (eframe, ureq, serde,
+    pulldown-cmark, walkdir, chrono, regex, image, rfd) +
+    2 nativas Windows (windows-rs, winres)
+
+ARQUITECTURA FINAL
+  Núcleo (sin GUI):
+    · scan.rs           — análisis de repos individuales
+    · classify.rs       — heurística de scoring por keywords + topics
+    · ids.rs            — cache GitHub IDs con ETag flow
+    · index.rs          — reindex completo + repos_index.json
+    · html.rs           — generador de buscador.html autocontenido
+    · readme.rs         — render de README a HTML
+    · reclassify.rs     — análisis y aplicación de reclasificación
+    · topic_discovery.rs — descubrimiento de categorías candidatas
+    · categories.rs     — defaults hardcoded (fallback)
+    · categories_config — JSON externalizado editable
+    · apply_actions.rs  — ops sobre duplicados + safe_rmtree Win32
+    · duplicates.rs     — detección por nombre y por URL git
+    · moves.rs          — find_inbox_repos + helpers
+    · paths.rs          — paths convencionales del proyecto
+    · secrets.rs        — DPAPI cifrado (Anthropic + GitHub PAT)
+    · llm.rs            — Anthropic Claude API (traducción)
+    · wiki.rs           — generador Obsidian vault
+    · atomic_io.rs      — write-atomic con fsync + rename
+
+  GUI (eframe + egui):
+    · gui/theme.rs      — paleta sage
+    · gui/types.rs      — DialogStates, WorkerMsg, CatRow
+    · gui/helpers.rs    — funciones puras reutilizables
+    · gui/workers.rs    — los 4 apply_X_worker en thread::spawn
+    · gui/app.rs        — ClasificadorApp + update() (renders inline)
+
+UI DEFINITIVA
+  · Header: título "CLASIFICADOR DE REPOSITORIOS" + skyline
+    decorativo (verde oscuro → pastel) a la derecha.
+  · Fila 1: Escanear, Aplicar, Solo reindexar, Reclasificar todo,
+    Descubrir categorías, Categorías, API Key, Limpiar log.
+  · Fila 2: Refrescar GitHub IDs, Traducir READMEs (con bandera CO),
+    Wiki Obsidian, Abrir buscador.
+  · Log multilínea coloreado con menú contextual (right-click)
+    para Copiar todo / Limpiar.
+  · Status bar con versión + autor.
+
+HERRAMIENTAS DE BUILD
+  · `_build_definitivo.bat` — build incremental, verifica que el
+    binario quedó actualizado tras la compilación (PowerShell
+    inline check para detectar fingerprint inconsistente de cargo).
+  · `_build_limpio.bat` — `cargo clean` + build desde cero, mata
+    `clasificador.exe` si está corriendo, copia, reindex.
+
+ARCHIVOS CRÍTICOS PERSISTIDOS (TODOS atomic-write)
+  D:\DUGOTEX\11 - IA\GitHub\
+    ├── clasificador.exe                — binario único
+    ├── buscador.html                   — entregable principal
+    ├── data/
+    │   ├── categorias.json             — taxonomía editable
+    │   ├── repo_ids.json               — cache GitHub (con etag)
+    │   ├── repos_index.json            — índice consumido por buscador
+    │   └── descripciones_es.json       — traducciones LLM
+    └── %APPDATA%/.../config.dat        — DPAPI cifrado (key + PAT)
+
+================================================================================
+  CRÉDITOS Y AGRADECIMIENTOS
+================================================================================
+
+  Diseño y desarrollo:  jlmera (Jorge L. Mera)
+  Empresa:              DUGOTEX
+  Asistencia AI:        Claude (Anthropic)
+
+  Stack final:          Rust 1.95 + eframe/egui 0.29 + windows-rs
+                        0.58 + ureq 2.x + pulldown-cmark 0.13 +
+                        walkdir + chrono + serde + regex +
+                        once_cell
+
+  Toolchain:            rustup stable-x86_64-pc-windows-msvc 1.95
+                        Visual Studio 2022 Build Tools (cl.exe + Win SDK)
+
+  Paleta:               Verde sage #8FB46B (decisión del usuario)
+  Iconografía:          Skyline decorativo en header + bandera de
+                        Colombia para el botón "Traducir READMEs"
+                        (egui no compone los regional indicators
+                        del emoji 🇨🇴 con la fuente NotoEmoji default)
+
+================================================================================
+  HITOS DE LA v1.0.0 (en orden cronológico)
+================================================================================
+
+  28-abr 2026  Inventario inicial (94 repos) + 10 categorías + buscador
+  29-abr 2026  Port completo a Rust + GUI definitiva
+  30-abr 2026  Categorías editables (3a · 3b · 3c)
+   3-may 2026  Robustez: atomic_io vs corrupción Syncthing (3d)
+               Descubridor automático de categorías por topics (Fase 4)
+               Refinamientos y UX: compactar, borrar vacías, simular,
+                                   solo verdes, header skyline, log
+                                   con menú contextual (Fase 5)
+   4-may 2026  Refresh inteligente con ETag (B5.3)
+               Refactor modular de gui/app.rs (B5.2)
+               Optimizaciones finales (regex Lazy + dead code)
+               RELEASE v1.0.0
+
+================================================================================
+  ROADMAP v1.x / v2.0 (documento aparte)
+================================================================================
+
+  Las features pendientes para futuras versiones están detalladas en
+  `roadmap_clasificador.pdf` (entregable de planificación con 25
+  features priorizadas en 6 oleadas):
+
+    Oleada 1 (~6h)    — Quick wins UX (búsqueda, preview detallado,
+                        botones por repo, descartar desde buscador)
+    Oleada 2 (~8h)    — Memoria personal: estados por repo, notas
+                        markdown, carpeta _descartados
+    Oleada 3 (~7h)    — Pulido (drag&drop, memoria de descartes,
+                        HISTORIA continuada, refactor renders)
+    Oleada 4 (~7h)    — Analítica: historial, dashboard, refresh
+                        inteligente avanzado
+    Oleada 5 (~5d)    — Inteligencia con LLM (asistente, auto-clasif)
+    Oleada 6 (~10d)   — Ecosistema (multi-tag, schedule, salud)
+
+================================================================================
+  Documento generado el 4 de mayo de 2026.
+  Cierre v1.0.0.  Fin del archivo HISTORIA_PROYECTO.txt
+================================================================================

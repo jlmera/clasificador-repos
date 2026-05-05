@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>__TITLE__ — README</title>
+<style>
+:root{--bg:#ffffff;--panel:#f6f8fa;--panel2:#eaeef2;--fg:#1f2328;
+--muted:#59636e;--accent:#8FB46B;--accent-h:#496229;--accent2:#125F27;
+--border:#d0d7de;--pill:#8FB46B22;--pill-fg:#3D5827}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+line-height:1.55;font-size:15px}
+.topbar{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--border);
+padding:10px 24px;display:flex;align-items:center;gap:14px;z-index:10}
+.topbar .name{font-weight:600;font-size:16px;color:var(--pill-fg)}
+.topbar .cat{background:var(--pill);color:var(--pill-fg);padding:3px 10px;
+border-radius:999px;font-size:12px;font-family:ui-monospace,Menlo,monospace}
+.topbar a.back{margin-left:auto;color:var(--accent2);text-decoration:none;
+font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;
+background:var(--bg)}
+.topbar a.back:hover{background:var(--pill);border-color:var(--accent)}
+main{max-width:920px;margin:0 auto;padding:32px 32px 80px 32px}
+h1,h2,h3,h4,h5,h6{color:var(--fg);margin-top:28px;margin-bottom:14px}
+h1{font-size:28px;border-bottom:1px solid var(--border);padding-bottom:8px}
+h2{font-size:22px;border-bottom:1px solid var(--border);padding-bottom:6px}
+h3{font-size:18px}h4{font-size:16px}
+a{color:var(--accent2)}a:hover{color:var(--accent-h)}
+p{margin:10px 0}ul,ol{padding-left:28px}
+code{background:var(--panel);padding:2px 6px;border-radius:4px;
+font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:#cf222e}
+pre{background:var(--panel);padding:14px 16px;border-radius:8px;overflow-x:auto;border:1px solid var(--border)}
+pre code{background:none;padding:0;color:var(--fg);font-size:13px}
+blockquote{border-left:4px solid var(--accent);background:var(--pill);
+padding:6px 14px;margin:10px 0;color:var(--pill-fg)}
+table{border-collapse:collapse;margin:12px 0;width:100%}
+th,td{border:1px solid var(--border);padding:6px 12px;text-align:left}
+th{background:var(--panel)}
+tr:nth-child(even) td{background:var(--panel)}
+img{max-width:100%;height:auto;border-radius:6px}
+hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+.no-readme{text-align:center;padding:60px 20px;color:var(--muted)}
+.no-readme code{background:var(--panel);padding:2px 6px;border-radius:4px;color:var(--fg)}
+</style></head><body>
+<div class="topbar">
+<span class="name">📖 __TITLE__</span>
+<span class="cat">__CAT__</span>
+<a class="back" href="__BACK__">← Volver al buscador</a>
+</div>
+<main>__BODY__</main>
+</body></html>

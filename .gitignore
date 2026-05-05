@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────
+# .gitignore para el proyecto Clasificador de Repositorios
+# ─────────────────────────────────────────────────────────────────
+
+# === Rust / Cargo ===
+# La carpeta target/ contiene los binarios compilados (~600 MB).
+# Se regenera con `cargo build`. JAMÁS se sube a git.
+/target/
+**/target/
+
+# Archivos auxiliares de cargo
+Cargo.lock.tmp
+*.rs.bk
+
+# === Editores / IDEs ===
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IntelliJ / RustRover
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+*~
+
+# === Sistema operativo ===
+# Windows
+Thumbs.db
+desktop.ini
+*.lnk
+
+# macOS (por si abrís el repo desde otra máquina)
+.DS_Store
+
+# Linux
+*.bak
+
+# === Archivos temporales del proyecto ===
+# Logs de debug, crash dumps
+*.log
+crash.log
+*.dmp
+
+# Archivos temporales de la propia app
+*.tmp
+
+# === Secretos (NUNCA commitear) ===
+# El config.dat con DPAPI vive en %APPDATA%, pero por las dudas:
+config.dat
+*.key
+*.pem
+secrets.json
+.env
+.env.local
+
+# === Archivos de testing local ===
+# Si en algún momento generás repos de prueba dentro del proyecto
+test_data/
+*.test.tmp
