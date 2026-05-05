@@ -6,23 +6,40 @@ Aplicación nativa Windows para mantener organizada una colección creciente de 
 
 ---
 
-## Capturas
+## Interfaz
+
+La aplicación expone todas sus operaciones desde una toolbar única bajo un header dinámico con skyline animado en degradado verde sage. Cada botón dispara un worker en su propio thread y publica el progreso en el panel de log central, sin bloquear el render loop de egui.
+
+![Captura principal del clasificador](docs/screenshots/main.png)
+
+### Acciones disponibles
+
+| Botón | Función |
+|---|---|
+| 🔍 **Escanear** | Analiza repos sin clasificar y propone categoría con scoring por keywords + topics oficiales |
+| ✅ **Aplicar** | Ejecuta el plan de clasificación: mueve cada repo a su carpeta de categoría |
+| 🧹 **Limpiar log** | Vacía el panel de output |
+| 🔄 **Solo reindexar** | Regenera `repos_index.json` y `buscador.html` sin re-escanear repos |
+| 🔁 **Reclasificar** | Re-evalúa repos ya clasificados (útil tras editar categorías o keywords) |
+| 🔍 **Descubrir** | Propone categorías nuevas a partir de topics oficiales de GitHub, con preview de matches |
+| 🏷 **Categorías** | Editor visual: añadir, renombrar (renombra carpetas físicas), reordenar, editar keywords y topic_boosts |
+| ⚙ **API Key** | Configura PAT de GitHub y API key de Anthropic — cifrado con DPAPI atado a usuario+máquina |
+| 🆔 **Refrescar GitHub IDs** | Sincroniza metadata oficial vía REST API con conditional GET (`If-None-Match` / ETag) |
+| 🇨🇴 **Traducir READMEs** | Genera resumen en español con Claude (`claude-sonnet-4-6`), con caché incremental |
+| 📚 **Wiki Obsidian** | Exporta vault con frontmatter YAML, wikilinks y página por categoría |
+| 🌐 **Abrir buscador** | Lanza `buscador.html` (autocontenido, paginado, filtrable) en el navegador |
+
+### Output típico durante un scan
 
 ```
-┌─ CLASIFICADOR DE REPOSITORIOS ─────────  ▒▒▓▓▓▓▓▓▓▓▓▓▓▓ ─┐
-│ Status: Listo. Selecciona una acción.                     │
-├───────────────────────────────────────────────────────────┤
-│ [🔍 Escanear] [✅ Aplicar]                                │
-│ [🧹 Limpiar log] [🔄 Solo reindexar] [🔁 Reclasificar]   │
-│ [🔍 Descubrir] [🏷 Categorías] [⚙ API Key]              │
-│ [🆔 Refrescar GitHub IDs] [🇨🇴 Traducir READMEs]           │
-│ [📚 Wiki Obsidian] [🌐 Abrir buscador]                    │
-├───────────────────────────────────────────────────────────┤
-│ === Acción: scan ===                                      │
-│   • langgraph  [Python, stack=python]                     │
-│       → 03-agentes-y-llms  conf=0.86                      │
-│   ...                                                     │
-└───────────────────────────────────────────────────────────┘
+=== Acción: scan ===
+  • langgraph        [Python, stack=python]
+      → 03-agentes-y-llms          conf=0.86
+  • next.js          [TypeScript, stack=node]
+      → 06-frontend-y-ui           conf=0.92
+  • whisper.cpp      [C++, stack=native]
+      → 04-audio-y-voz             conf=0.78
+  ...
 ```
 
 ---
