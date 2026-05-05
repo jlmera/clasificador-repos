@@ -1,7 +1,7 @@
 # Línea de tiempo — CLASIFICADOR DE REPOSITORIOS
 
 **Proyecto**: Clasificador de Repositorios GitHub
-**Autor**: Jorge Mera (jlmera) — DUGOTEX
+**Autor**: Jorge Mera (jlmera)
 **Periodo de construcción**: 28-Abr a 4-May 2026
 **Versión final**: 1.0.0 (release el 4-May-2026)
 **Repositorio raíz**: `D:\DUGOTEX\11 - IA\GitHub\`
