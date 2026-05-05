@@ -1,6 +1,6 @@
 ================================================================================
   CLASIFICADOR DE REPOSITORIOS — HISTORIA COMPLETA DEL PROYECTO
-  Desarrollo: jlmera (Jorge L. Mera) · DUGOTEX
+  Desarrollo: jlmera (Jorge L. Mera)
   Carpeta:    D:\DUGOTEX\11 - IA\GitHub\
 ================================================================================
 
