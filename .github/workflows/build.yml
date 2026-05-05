@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────
+# Build CI — clasificador de repositorios
+# ─────────────────────────────────────────────────────────────────
+#
+# Compila clasificador.exe en release mode en cada push a main y
+# en cada pull request. Sube el binario como artifact descargable
+# (90 días de retención por defecto en GitHub).
+#
+# Runner: windows-latest (obligatorio: el proyecto usa windows-rs
+# y APIs Win32 que solo existen en Windows).
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # permite lanzar el build manual desde la UI
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-windows:
+    name: Build (Windows MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry + target/
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cargo check
+        run: cargo check --release --all-targets
+
+      - name: Cargo build (release)
+        run: cargo build --release
+
+      - name: Verify binary exists
+        run: |
+          if (-not (Test-Path "target\release\clasificador.exe")) {
+            Write-Error "❌ clasificador.exe NOT generated"
+            exit 1
+          }
+          $size = (Get-Item "target\release\clasificador.exe").Length / 1MB
+          Write-Host "✅ clasificador.exe generado — $([math]::Round($size, 2)) MB"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clasificador-windows-x86_64
+          path: target/release/clasificador.exe
+          retention-days: 90
+          if-no-files-found: error
